@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Raos Bank</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    input, button { margin: 5px; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    td, th { border: 1px solid #333; padding: 5px 10px; }
+  </style>
+</head>
+<body>
+<h1>Raos Bank</h1>
+
+<h2>Create Account</h2>
+<input type="text" id="name" placeholder="Name">
+<input type="number" id="balance" placeholder="Initial Balance">
+<button onclick="createAccount()">Create</button>
+
+<h2>Accounts</h2>
+<table id="accountsTable">
+  <tr><th>ID</th><th>Name</th><th>Balance</th></tr>
+</table>
+
+<h2>Transactions</h2>
+<input type="number" id="fromId" placeholder="From Account ID">
+<input type="number" id="toId" placeholder="To Account ID (for transfer)">
+<input type="number" id="amount" placeholder="Amount">
+<button onclick="deposit()">Deposit</button>
+<button onclick="withdraw()">Withdraw</button>
+<button onclick="transfer()">Transfer</button>
+
+<h2>Transaction History</h2>
+<input type="number" id="historyId" placeholder="Account ID">
+<button onclick="getTransactions()">Show</button>
+<table id="transactionsTable">
+  <tr><th>ID</th><th>Type</th><th>Amount</th><th>Target Account</th><th>Date</th></tr>
+</table>
+
+<script>
+const accountService = "http://localhost:8081";
+const transactionService = "http://localhost:8082";
+
+async function loadAccounts() {
+  const res = await fetch(`${accountService}/accounts`);
+  const accounts = await res.json();
+  const table = document.getElementById("accountsTable");
+  table.innerHTML = "<tr><th>ID</th><th>Name</th><th>Balance</th></tr>";
+  accounts.forEach(a => {
+    const row = table.insertRow();
+    row.insertCell(0).innerText = a.id;
+    row.insertCell(1).innerText = a.name;
+    row.insertCell(2).innerText = a.balance;
+  });
+}
+
+async function createAccount() {
+  const name = document.getElementById("name").value;
+  const balance = parseFloat(document.getElementById("balance").value);
+  await fetch(`${accountService}/accounts`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({name, balance})
+  });
+  loadAccounts();
+}
+
+async function deposit() {
+  const accountId = parseInt(document.getElementById("fromId").value);
+  const amount = parseFloat(document.getElementById("amount").value);
+  await fetch(`${transactionService}/deposit`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({accountId, amount})
+  });
+  loadAccounts();
+}
+
+async function withdraw() {
+  const accountId = parseInt(document.getElementById("fromId").value);
+  const amount = parseFloat(document.getElementById("amount").value);
+  await fetch(`${transactionService}/withdraw`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({accountId, amount})
+  });
+  loadAccounts();
+}
+
+async function transfer() {
+  const fromAccountId = parseInt(document.getElementById("fromId").value);
+  const toAccountId = parseInt(document.getElementById("toId").value);
+  const amount = parseFloat(document.getElementById("amount").value);
+  await fetch(`${transactionService}/transfer`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({fromAccountId, toAccountId, amount})
+  });
+  loadAccounts();
+}
+
+async function getTransactions() {
+  const accountId = parseInt(document.getElementById("historyId").value);
+  const res = await fetch(`${transactionService}/transactions/${accountId}`);
+  const txs = await res.json();
+  const table = document.getElementById("transactionsTable");
+  table.innerHTML = "<tr><th>ID</th><th>Type</th><th>Amount</th><th>Target Account</th><th>Date</th></tr>";
+  txs.forEach(t => {
+    const row = table.insertRow();
+    row.insertCell(0).innerText = t.id;
+    row.insertCell(1).innerText = t.type;
+    row.insertCell(2).innerText = t.amount;
+    row.insertCell(3).innerText = t.targetAccountId || "-";
+    row.insertCell(4).innerText = t.createdAt;
+  });
+}
+
+// Load accounts on page load
+loadAccounts();
+</script>
+
+</body>
+</html>
+
