@@ -1,0 +1,25 @@
+{
+  "name": "raosbank",
+  "version": "1.0.0",
+  "description": "Raos Bank Microservices Project",
+  "main": "index.js",
+  "scripts": {
+    "start:account": "node account-service/server.js",
+    "start:transaction": "node transaction-service/server.js",
+    "start:notification": "node notification-service/server.js",
+    "start:auth": "node auth-service/server.js",
+    "start:frontend": "cd frontend && npm start",
+    "start": "concurrently \"npm run start:account\" \"npm run start:transaction\" \"npm run start:notification\" \"npm run start:auth\" \"npm run start:frontend\""
+  },
+  "author": "Manjunatha Rao B S",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "sqlite3": "^5.1.6"
+  }
+}
+

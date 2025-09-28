@@ -1,116 +1,65 @@
-const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const axios = require("axios");
-const app = express();
-const PORT = 8082;
+const express = require('express');
+const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 
+const app = express();
+app.use(cors());
 app.use(express.json());
 
-// SQLite DB for transactions
-const db = new sqlite3.Database("./transactions.db", (err) => {
-  if (err) console.error("DB connection error:", err.message);
-  else console.log("Connected to SQLite DB for transactions");
+const db = new sqlite3.Database('transactions.db', (err) => {
+  if (err) console.error(err.message);
+  else console.log('Connected to SQLite DB for transactions');
 });
 
-// Create table if not exists
-db.run(`
-CREATE TABLE IF NOT EXISTS transactions (
+db.run(`CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  accountId INTEGER NOT NULL,
-  type TEXT NOT NULL,
-  amount REAL NOT NULL,
-  createdAt TEXT NOT NULL,
-  targetAccountId INTEGER
-)
-`);
-
-// Helper to update account balance via Account Service
-async function updateBalance(accountId, newBalance) {
-  await axios.post(`http://localhost:8081/accounts/update`, { id: accountId, balance: newBalance });
-}
+  accountId INTEGER,
+  type TEXT,
+  amount REAL,
+  targetAccountId INTEGER,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // Deposit
-app.post("/deposit", async (req, res) => {
+app.post('/deposit', (req, res) => {
   const { accountId, amount } = req.body;
-  if (!accountId || !amount) return res.status(400).json({ error: "accountId and amount required" });
-
-  try {
-    const accountRes = await axios.get(`http://localhost:8081/accounts`);
-    const account = accountRes.data.find(a => a.id === accountId);
-    if (!account) return res.status(404).json({ error: "Account not found" });
-
-    const newBalance = account.balance + amount;
-    await updateBalance(accountId, newBalance);
-
-    const createdAt = new Date().toISOString();
-    db.run("INSERT INTO transactions (accountId, type, amount, createdAt) VALUES (?, ?, ?, ?)", 
-      [accountId, "deposit", amount, createdAt]);
-
-    res.json({ message: "Deposit successful", newBalance });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Withdraw
-app.post("/withdraw", async (req, res) => {
-  const { accountId, amount } = req.body;
-  if (!accountId || !amount) return res.status(400).json({ error: "accountId and amount required" });
-
-  try {
-    const accountRes = await axios.get(`http://localhost:8081/accounts`);
-    const account = accountRes.data.find(a => a.id === accountId);
-    if (!account) return res.status(404).json({ error: "Account not found" });
-    if (account.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
-
-    const newBalance = account.balance - amount;
-    await updateBalance(accountId, newBalance);
-
-    const createdAt = new Date().toISOString();
-    db.run("INSERT INTO transactions (accountId, type, amount, createdAt) VALUES (?, ?, ?, ?)", 
-      [accountId, "withdraw", amount, createdAt]);
-
-    res.json({ message: "Withdrawal successful", newBalance });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Transfer
-app.post("/transfer", async (req, res) => {
-  const { fromAccountId, toAccountId, amount } = req.body;
-  if (!fromAccountId || !toAccountId || !amount) return res.status(400).json({ error: "fromAccountId, toAccountId, and amount required" });
-
-  try {
-    const accountRes = await axios.get(`http://localhost:8081/accounts`);
-    const fromAccount = accountRes.data.find(a => a.id === fromAccountId);
-    const toAccount = accountRes.data.find(a => a.id === toAccountId);
-    if (!fromAccount || !toAccount) return res.status(404).json({ error: "One or both accounts not found" });
-    if (fromAccount.balance < amount) return res.status(400).json({ error: "Insufficient funds in sender account" });
-
-    await updateBalance(fromAccountId, fromAccount.balance - amount);
-    await updateBalance(toAccountId, toAccount.balance + amount);
-
-    const createdAt = new Date().toISOString();
-    db.run("INSERT INTO transactions (accountId, type, amount, createdAt, targetAccountId) VALUES (?, ?, ?, ?, ?)", 
-      [fromAccountId, "transfer", amount, createdAt, toAccountId]);
-
-    res.json({ message: "Transfer successful" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get transactions by accountId
-app.get("/transactions/:accountId", (req, res) => {
-  const accountId = req.params.accountId;
-  db.all("SELECT * FROM transactions WHERE accountId=?", [accountId], (err, rows) => {
+  db.run(`INSERT INTO transactions (accountId, type, amount) VALUES (?, 'deposit', ?)`, [accountId, amount], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    db.run(`UPDATE accounts SET balance = balance + ? WHERE id = ?`, [amount, accountId]);
+    res.json({ success: true });
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Transaction Service running on http://localhost:${PORT}`);
+// Withdraw
+app.post('/withdraw', (req, res) => {
+  const { accountId, amount } = req.body;
+  db.run(`INSERT INTO transactions (accountId, type, amount) VALUES (?, 'withdraw', ?)`, [accountId, amount], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    db.run(`UPDATE accounts SET balance = balance - ? WHERE id = ?`, [amount, accountId]);
+    res.json({ success: true });
+  });
 });
+
+// Transfer
+app.post('/transfer', (req, res) => {
+  const { fromAccountId, toAccountId, amount } = req.body;
+  db.run(`INSERT INTO transactions (accountId, type, amount, targetAccountId) VALUES (?, 'transfer', ?, ?)`,
+    [fromAccountId, amount, toAccountId], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      db.run(`UPDATE accounts SET balance = balance - ? WHERE id = ?`, [amount, fromAccountId]);
+      db.run(`UPDATE accounts SET balance = balance + ? WHERE id = ?`, [amount, toAccountId]);
+      res.json({ success: true });
+    });
+});
+
+// Get transactions of an account
+app.get('/transactions/:accountId', (req, res) => {
+  const { accountId } = req.params;
+  db.all(`SELECT * FROM transactions WHERE accountId = ? OR targetAccountId = ?`, [accountId, accountId], (err, rows) => {
+    if (err) res.status(500).json({ error: err.message });
+    else res.json(rows);
+  });
+});
+
+app.listen(8082, () => console.log('Transaction Service running on http://localhost:8082'));
 
